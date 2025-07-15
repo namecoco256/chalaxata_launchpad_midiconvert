@@ -39,15 +39,15 @@ const LED_COLORS = {
 };
 
 //各格子のスタート地点
-const TARTOC_START_X: number[] = [1,1];
+const TARTOC_START_X: number[] = ref([1,1]);
 const TARTOC_START_Y: number[] = [1,5];
 
-const TARTOC_ORIGIN_X: number[] = [6,6];
-const TARTOC_ORIGIN_Y: number[] = [2,7];
+const TARTOC_ORIGIN_X = ref([6,6]);
+const TARTOC_ORIGIN_Y = ref([2,6]);
 //上下の格子のY座標差
 const Y_TARTOC_OFFSET = 4;
 
-const OCTARVE_IN_41EDO = 41;
+const OCTAVE_IN_41EDO = 41;
 const MIDI_CENTER_C_NOTE = ref(60);
 const octaveShift = ref(0);
 const transposeShift = ref(0);
@@ -322,13 +322,17 @@ function handlePadPress(originalMidiNote: number, velocity: number): void {
   };
   console.log(`パッド座標: (${padCoord.x}, ${padCoord.y})`);
 
+  let padRegion = 0;
+  if(padCoord.y >= TARTOC_START_Y[1]){//上下の領域どっちが押されてるか判定
+    padRegion = 1;
+  }
   // Launchpad ProのLEDを白色に光らせる
   const color:string = "WHITE";
   setLedColor(padCoord, LED_COLORS[color]);
   
   // TODO: calculateOutputMidiNote を呼び出して変換後のノート番号を取得
   // 仮想MIDIデバイスにMIDIノートを送信
-  const outputMidiNote = convertMidiNoteToChalaxata(padCoord, 0);
+  const outputMidiNote = convertMidiNoteToChalaxata(padCoord, padRegion);
   if(outputMidiNote === null) {
     console.log(`変換後のMIDIノート ${outputMidiNote} を取得できませんでした(マッピング外)。`);
     return
@@ -348,14 +352,20 @@ function handlePadRelease(originalMidiNote: number): void {
 
   const padCoord = getPadCoordinateFromMidiNote(originalMidiNote);
   if (!padCoord) return;
+  console.log(`パッド座標: (${padCoord.x}, ${padCoord.y})`);
 
+
+  let padRegion = 0;//上下の領域どっちが押されてるか判定
+  if(padCoord.y >= TARTOC_START_Y[1]){
+    padRegion = 1;
+  }
   // パッドを消灯（黒色）に戻す
   // 新しい setLedColor 関数を使う
   setLedColor(padCoord, LED_COLORS.OFF);
 
   // TODO: calculateOutputMidiNote を呼び出して変換後のノート番号を取得
   // 仮想MIDIデバイスにMIDIノートを送信
-  const outputMidiNote = convertMidiNoteToChalaxata(padCoord, 0);
+  const outputMidiNote = convertMidiNoteToChalaxata(padCoord, padRegion);
   if(outputMidiNote === null) {
     console.log(`変換後のMIDIノート ${outputMidiNote} を取得できませんでした(マッピング外)。`);
     return
@@ -380,7 +390,7 @@ const INCREMENT_OPTIONS = [0, 41, 24, 13, 33, 19, 29]; //左から順に、0次�
 let dimensionIdxHorizontal = 2; //軸に対応する次元の設定
 let dimensionIdxVertical = 3; // 初期設定
 function getDistanceFromTartocOrigin(coord: PadCoordinate, originIdx: number): PadCoordinate {
-  const origin: PadCoordinate = {x:TARTOC_ORIGIN_X[originIdx], y:TARTOC_ORIGIN_Y[originIdx]};
+  const origin: PadCoordinate = {x:TARTOC_ORIGIN_X.value[originIdx], y:TARTOC_ORIGIN_Y.value[originIdx]};
   console.log(`origin: (${origin.x}, ${origin.y})`);
   const distanceX = coord.x - origin.x;
   const distanceY = coord.y - origin.y;
@@ -397,7 +407,8 @@ function convertMidiNoteToChalaxata(coord: PadCoordinate, originIdx: number): nu
   const noteDiff = getMidiNoteDiffFromTartocOrigin(coord, originIdx);
   let outputMidiNote = noteDiff + MIDI_CENTER_C_NOTE.value;//中央ノートからの移動量なので、実際の値を出す
   outputMidiNote += transposeShift.value;//トランスポーズを適用
-  outputMidiNote += octaveShift.value * OCTARVE_IN_41EDO;//オクターブシフトを適用
+  outputMidiNote += octaveShift.value * OCTAVE_IN_41EDO;//オクターブシフトを適用
+  outputMidiNote += OCTAVE_IN_41EDO * originIdx; //上側のパッド領域は1オクターブ上
   console.log(outputMidiNote);
   if (outputMidiNote < 0) {
     console.log("使用可能な音程を超えています。");
