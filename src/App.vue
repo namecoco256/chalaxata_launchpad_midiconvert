@@ -42,7 +42,7 @@ const LED_COLORS = {
 const TARTOC_START_X: number[] = [1,1];
 const TARTOC_START_Y: number[] = [1,5];
 
-const TARTOC_ORIGIN_X: number[] = [1,5];
+const TARTOC_ORIGIN_X: number[] = [6,6];
 const TARTOC_ORIGIN_Y: number[] = [2,7];
 //上下の格子のY座標差
 const Y_TARTOC_OFFSET = 4;
@@ -328,7 +328,11 @@ function handlePadPress(originalMidiNote: number, velocity: number): void {
   
   // TODO: calculateOutputMidiNote を呼び出して変換後のノート番号を取得
   // 仮想MIDIデバイスにMIDIノートを送信
-  const outputMidiNote = originalMidiNote; 
+  const outputMidiNote = convertMidiNoteToChalaxata(padCoord, 0);
+  if(outputMidiNote === null) {
+    console.log(`変換後のMIDIノート ${outputMidiNote} を取得できませんでした(マッピング外)。`);
+    return
+  }
   if (virtualMidiOutput) {
     virtualMidiOutput.send([0x90, outputMidiNote, velocity]);
     console.log(`仮想MIDIへノート ${outputMidiNote} を送信`);
@@ -351,7 +355,11 @@ function handlePadRelease(originalMidiNote: number): void {
 
   // TODO: calculateOutputMidiNote を呼び出して変換後のノート番号を取得
   // 仮想MIDIデバイスにMIDIノートを送信
-  const outputMidiNote = originalMidiNote;
+  const outputMidiNote = convertMidiNoteToChalaxata(padCoord, 0);
+  if(outputMidiNote === null) {
+    console.log(`変換後のMIDIノート ${outputMidiNote} を取得できませんでした(マッピング外)。`);
+    return
+  }
   if (virtualMidiOutput) {
     virtualMidiOutput.send([0x80, outputMidiNote, 0]); // ノートオフはベロシティ0
     console.log(`仮想MIDIへノート ${outputMidiNote} のオフを送信`);
@@ -373,21 +381,24 @@ let dimensionIdxHorizontal = 2; //軸に対応する次元の設定
 let dimensionIdxVertical = 3; // 初期設定
 function getDistanceFromTartocOrigin(coord: PadCoordinate, originIdx: number): PadCoordinate {
   const origin: PadCoordinate = {x:TARTOC_ORIGIN_X[originIdx], y:TARTOC_ORIGIN_Y[originIdx]};
+  console.log(`origin: (${origin.x}, ${origin.y})`);
   const distanceX = coord.x - origin.x;
   const distanceY = coord.y - origin.y;
   return {x: distanceX, y: distanceY};
 }
 function getMidiNoteDiffFromTartocOrigin(coord: PadCoordinate, originIdx: number): number {
   const distance = getDistanceFromTartocOrigin(coord, originIdx);
-  return distance.x * INCREMENT_OPTIONS[dimensionIdxHorizontal] + distance.y * INCREMENT_OPTIONS[dimensionIdxVertical]; 
+  const step = distance.x * INCREMENT_OPTIONS[dimensionIdxHorizontal] + distance.y * INCREMENT_OPTIONS[dimensionIdxVertical];
+  console.log(`distance: (${distance.x}, ${distance.y}) step: ${step}`);
+  return step;
 }
 function convertMidiNoteToChalaxata(coord: PadCoordinate, originIdx: number): number | null {
   const coordDistance: PadCoordinate = getDistanceFromTartocOrigin(coord, originIdx);
   const noteDiff = getMidiNoteDiffFromTartocOrigin(coord, originIdx);
   let outputMidiNote = noteDiff + MIDI_CENTER_C_NOTE.value;//中央ノートからの移動量なので、実際の値を出す
-  outputMidiNote += transposeShift.value;//オクターブシフトを適用
+  outputMidiNote += transposeShift.value;//トランスポーズを適用
   outputMidiNote += octaveShift.value * OCTARVE_IN_41EDO;//オクターブシフトを適用
-
+  console.log(outputMidiNote);
   if (outputMidiNote < 0) {
     console.log("使用可能な音程を超えています。");
     return null;
