@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 // ---------------------------------------------------
 // 1. 定数と型定義
 // ---------------------------------------------------
@@ -295,11 +295,10 @@ function setupMidiInputListener(): void {
       else if ((statusByte & 0xF0) === 0x80 || ((statusByte & 0xF0) === 0x90 && velocity === 0)) {
         handlePadRelease(midiNote);
       }
-      // MIDI CC (Control Change) メッセージは、シンプルにするため引き続きコメントアウト
-      // else if ((statusByte & 0xF0) === 0xB0) {
-      //   // handleControlChange(statusByte, data1, data2); // CC処理が必要な場合はこの行を有効にする
-      //   console.log(`MIDI CCメッセージ受信: Status=${statusByte.toString(16)}, CC=${data1}, Value=${data2}`);
-      // }
+      // MIDI CC (Control Change) メッセージ
+      else if ((statusByte & 0xF0) === 0xB0) {
+        handleControlChange(statusByte, midiNote, velocity); // CC処理が必要な場合はこの行を有効にする
+      }
     };
     console.log("Launchpad Pro入力リスナーが設定されました。");
   } else {
@@ -341,6 +340,10 @@ function handlePadPress(originalMidiNote: number, velocity: number): void {
     virtualMidiOutput.send([0x90, outputMidiNote, velocity]);
     console.log(`仮想MIDIへノート ${outputMidiNote} を送信`);
   }
+}
+
+function handleControlChange(statusByte: number, midiNote: number, velocity: number): void {
+  console.log(`MIDI CCメッセージ受信: Status=${statusByte.toString(16)}, CC=${midiNote}, Value=${velocity}`);
 }
 
 /**
@@ -396,13 +399,17 @@ function getDistanceFromTartocOrigin(coord: PadCoordinate, originIdx: number): P
   const distanceY = coord.y - origin.y;
   return {x: distanceX, y: distanceY};
 }
-function getMidiNoteDiffFromTartocOrigin(coord: PadCoordinate, originIdx: number): number {
+
+//格子の原点からの距離を求める
+function getMidiNoteDiffFromTartocOrigin(coord: PadCoordinate, originIdx: number): number { 
   const distance = getDistanceFromTartocOrigin(coord, originIdx);
   const step = distance.x * INCREMENT_OPTIONS[dimensionIdxHorizontal] + distance.y * INCREMENT_OPTIONS[dimensionIdxVertical];
   console.log(`distance: (${distance.x}, ${distance.y}) step: ${step}`);
   return step;
 }
-function convertMidiNoteToChalaxata(coord: PadCoordinate, originIdx: number): number | null {
+
+//格子内の座標からMIDIノートの移動量を求める
+function convertMidiNoteToChalaxata(coord: PadCoordinate, originIdx: number): number | null { 
   const coordDistance: PadCoordinate = getDistanceFromTartocOrigin(coord, originIdx);
   const noteDiff = getMidiNoteDiffFromTartocOrigin(coord, originIdx);
   let outputMidiNote = noteDiff + MIDI_CENTER_C_NOTE.value;//中央ノートからの移動量なので、実際の値を出す
@@ -420,6 +427,77 @@ function convertMidiNoteToChalaxata(coord: PadCoordinate, originIdx: number): nu
   }
   return outputMidiNote;
 }
+
+type LPP_RGBRow = [LPP_RGB, LPP_RGB, LPP_RGB, LPP_RGB, LPP_RGB, LPP_RGB, LPP_RGB, LPP_RGB] //全パッドの色をまとめるための配列の型
+type LPP_RGBGrid = [LPP_RGBRow, LPP_RGBRow, LPP_RGBRow, LPP_RGBRow, LPP_RGBRow, LPP_RGBRow, LPP_RGBRow, LPP_RGBRow]
+const createEmptyRGB = (): LPP_RGB => ({ r: 0, g: 0, b: 0 })//からっぽのRGBを作って返す
+const createRow = (): LPP_RGBRow =>
+  [
+    createEmptyRGB(), createEmptyRGB(), createEmptyRGB(), createEmptyRGB(),
+    createEmptyRGB(), createEmptyRGB(), createEmptyRGB(), createEmptyRGB()
+  ]
+const defaultGridLighting: LPP_RGBGrid = [
+  createRow(), createRow(), createRow(), createRow(),
+  createRow(), createRow(), createRow(), createRow()
+]
+
+//--------------------------------------------
+//MIDIノートの値が、有効な数値(0-127)の範囲内にあるパッドをグレーに光らせる
+//--------------------------------------------
+//飽きたから後回しする！！もーやだこれ！！
+// function lightValidMidiNote(midiNote: number): LPP_RGBGrid {
+//   for(let i = 0; i < 8; i++){ //iが縦軸で
+//     for(let j = 0; j < 8; j++){ //jが横軸よ。
+//       let tartocIdx;
+//       if(i <= 4){
+//         tartocIdx = 0;
+//       } else {
+//         tartocIdx = 1;
+//       }
+//       const outputMidiNote = convertMidiNoteToChalaxata({x: i+1, y: j+1}, 0);
+//       if(!outputMidiNote || outputMidiNote >= 128 || outputMidiNote < 0) { //使用可能な音程の範囲外だったら光らせない
+//         defaultGridLighting[i][j] = LED_COLORS.OFF;
+//       }
+//       defaultGridLighting[i][j] = LED_COLORS.GRAY;
+//     }
+//   }
+//   return defaultGridLighting;
+// }
+// function generateGridLightingMidiMessage(grid: LPP_RGBGrid): Uint8Array {
+//   // SysExメッセージのヘッダー部分
+//   // F0h 00h 20h 29h 02h 10h 0Bh (SysEx開始, Novation ID, Product ID, コマンドID: LEDをRGBで設定)
+//   const sysexHeader = [0xF0, 0x00, 0x20, 0x29, 0x02, 0x10, 0x0B];
+  
+//   // LEDデータ部分
+//   // 各パッドに対して [LEDノート番号, 赤, 緑, 青] の4バイトを連続して追加する
+//   const ledData: number[] = [];
+//   for (let y = 0; y < GRID_SIZE_Y; y++) {
+//     for (let x = 0; x < GRID_SIZE_X; x++) {
+//       const padCoord: PadCoordinate = { x, y };
+//       const midiNote = getLedNoteFromPadCoordinate(padCoord); // 以前定義したパッド座標からMIDIノートを取得する関数
+//       if(!midiNote) continue;//取得できなかったらスキップ
+//       const color = grid[y][x];
+
+//       // MIDIノート番号はLaunchpad Pro Programmer's Reference GuideのNoteレイアウトの図を参考に
+//       // LEDのR, G, B値はそれぞれ0-127の範囲にクランプする
+//       ledData.push(
+//         midiNote,
+//         Math.max(0, Math.min(127, color.r)),
+//         Math.max(0, Math.min(127, color.g)),
+//         Math.max(0, Math.min(127, color.b))
+//       );
+//     }
+//   }
+//   // SysExメッセージのフッター部分 (F7h)
+//   const sysexFooter = [0xF7];
+
+//   // 全ての要素を結合してUint8Arrayとして返す
+//   return new Uint8Array([...sysexHeader, ...ledData, ...sysexFooter]);
+// }
+
+// computed(() => {
+  
+// })
 
 </script>
 
